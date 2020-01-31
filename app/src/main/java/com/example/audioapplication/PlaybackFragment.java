@@ -13,6 +13,7 @@ import android.view.ViewGroup;
 import android.widget.ImageButton;
 import android.widget.SeekBar;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -30,17 +31,15 @@ public class PlaybackFragment extends Fragment {
     public static final String FRAGMENT_TAG = PlaybackFragment.class.getName();
     public static final String KEY_FILE = "KEY_FILE";
     public static final String KEY_POSITION = "KEY_POSITION";
-    public static final String ACTION_PLAY = "com.example.audioapplication.PLAY";
-    public static final String ACTION_PAUSE = "com.example.audioapplication.PAUSE";
-
+    public static final String KEY_PATH = "KEY_PATH";
+    public static final String KEY_TITLE = "KEY_TITLE";
     private final String LOG_TAG = "myLogs";
 
     private boolean isBound = false;
     private ServiceConnection sConn;
     private Intent intent;
     private MusicService musicService;
-    private int duration;
-    private int currentPosition;
+    private Timer timer;
 
     private ImageButton buttonPlay;
     private ImageButton buttonPrevious;
@@ -71,7 +70,11 @@ public class PlaybackFragment extends Fragment {
         Bundle bundle = getArguments();
         if (bundle != null) {
             position = bundle.getInt(KEY_POSITION);
-            files = (List<AudioFile>) bundle.getSerializable(KEY_FILE);
+            try {
+                files = (List<AudioFile>) bundle.getSerializable(KEY_FILE);
+            } catch (ClassCastException e) {
+                e.printStackTrace();
+            }
         }
 
         buttonPlay = view.findViewById(R.id.buttonPlay);
@@ -80,10 +83,7 @@ public class PlaybackFragment extends Fragment {
         textViewTitle = view.findViewById(R.id.textViewTitle);
         seekBarProgress = view.findViewById(R.id.seekBarProgress);
 
-
-        intent = new Intent(getActivity(), MusicService.class);
-        intent.setClass(view.getContext(), MusicService.class);
-        getActivity().startService(intent);
+        runService();
 
         return view;
     }
@@ -97,6 +97,11 @@ public class PlaybackFragment extends Fragment {
             public void onServiceConnected(ComponentName name, IBinder service) {
                 Log.d(LOG_TAG, "PlaybackFragment onServiceConnected");
                 musicService = ((MusicService.ServiceBinder) service).getService();
+
+                if (musicService != null) {
+                    Log.d(LOG_TAG, "maxProgress = " + musicService.getMediaPlayerDuration());
+                    runTimer();
+                }
                 isBound = true;
             }
 
@@ -105,25 +110,19 @@ public class PlaybackFragment extends Fragment {
                 Log.d(LOG_TAG, "PlaybackFragment onServiceDisconnected");
                 musicService = null;
                 isBound = false;
+                timer.cancel();
             }
         };
 
-//        intent.putExtra(KEY_POSITION, files.get(position).getPath());
-//        intent.setAction(ACTION_PLAY);
-//        getActivity().startService(intent);
         buttonPlay.setImageResource(R.drawable.ic_pause_blue_24dp);
         textViewTitle.setText(files.get(position).getTitle());
         state = State.PLAY;
-//        seekBarProgress.setMax(musicService.getMediaPlayerDuration());
 
 
         buttonPlay.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 if (!isBound) return;
-
-
-                Log.d(LOG_TAG, "duration = " + duration);
 
                 if (state.equals(State.PLAY)) {
                     Log.d(LOG_TAG, "state - pause");
@@ -136,34 +135,29 @@ public class PlaybackFragment extends Fragment {
                     buttonPlay.setImageResource(R.drawable.ic_pause_blue_24dp);
                     state = State.PLAY;
                 }
-
             }
         });
 
         buttonPrevious.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                seekBarProgress.setProgress(0);
-                //mediaPlayer.seekTo(0);
-                //mediaPlayer.pause();
-                buttonPlay.setImageResource(R.drawable.ic_play_arrow_blue_24dp);
+                previousTrack();
             }
         });
 
         buttonNext.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-
+                nextTrack();
             }
         });
 
         seekBarProgress.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-//                if (fromUser) {
-//                    mediaPlayer.seekTo(progress);
-//
-//                }
+                if (fromUser) {
+                    musicService.seekMediaPlayerTo(progress);
+                }
             }
 
             @Override
@@ -175,28 +169,11 @@ public class PlaybackFragment extends Fragment {
             }
         });
 
-//        new Timer().scheduleAtFixedRate(new TimerTask() {
-//            @Override
-//            public void run() {
-//                if (state == State.PLAY) {
-//                    seekBarProgress.setProgress(musicService.getMediaPlayerCurrentPosition());
-////                    if (mediaPlayer.getCurrentPosition() == mediaPlayer.getDuration() || seekBarProgress.getMax() == seekBarProgress.getProgress()) {
-////                        Log.d("myTag", "mediaPlayer.getCurrentPosition() == mediaPlayer.getDuration()");
-////                        nextTrack();
-////
-////                        /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////                    }
-//                }
-//            }
-//        }, 0, 1000);
-
     }
-
 
     @Override
     public void onResume() {
         super.onResume();
-
         if (musicService != null) {
             musicService.resumeMusic();
         }
@@ -216,11 +193,69 @@ public class PlaybackFragment extends Fragment {
         isBound = true;
     }
 
-
     void doUnbindService() {
         if (isBound) {
             getActivity().unbindService(sConn);
             isBound = false;
         }
+    }
+
+    private void runService() {
+        intent = new Intent(getActivity(), MusicService.class);
+        intent.putExtra(KEY_PATH, files.get(position).getPath());
+        intent.putExtra(KEY_TITLE, files.get(position).getTitle());
+        getActivity().startService(intent);
+    }
+
+    private void runTimer() {
+
+        Log.d(LOG_TAG, "MediaPlayerDuration = " + musicService.getMediaPlayerDuration());
+
+        timer = new Timer();
+        timer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                seekBarProgress.setMax(musicService.getMediaPlayerDuration());
+                seekBarProgress.setProgress(musicService.getMediaPlayerCurrentPosition());
+                Log.d(LOG_TAG, "CurrentPosition = " + musicService.getMediaPlayerCurrentPosition());
+//                if (musicService.getMediaPlayerCurrentPosition() >= musicService.getMediaPlayerDuration() - 1000) {
+//                    nextTrack();
+//                }
+            }
+        }, 0, 1000);
+    }
+
+    private void nextTrack() {
+        timer.cancel();
+        if (position < files.size() - 1) {
+            musicService.stopMusic();
+            position++;
+            Log.d(LOG_TAG, "nextTrack(), position = " + position);
+            runService();
+            buttonPlay.setImageResource(R.drawable.ic_pause_blue_24dp);
+            textViewTitle.setText(files.get(position).getTitle());
+            seekBarProgress.setMax(musicService.getMediaPlayerDuration());
+        } else {
+            Log.d(LOG_TAG, "NOnextTrack(), position = " + position);
+            buttonPlay.setImageResource(R.drawable.ic_play_arrow_blue_24dp);
+            Toast.makeText(getContext(), "Воспроизведение окончено", Toast.LENGTH_SHORT).show();
+            musicService.stopMusic();
+        }
+        runTimer();
+    }
+
+    private void previousTrack() {
+        timer.cancel();
+        Log.d(LOG_TAG, "previousTrack()");
+        if (position > 0) {
+            musicService.stopMusic();
+            position--;
+            runService();
+            textViewTitle.setText(files.get(position).getTitle());
+            buttonPlay.setImageResource(R.drawable.ic_pause_blue_24dp);
+        } else {
+            Toast.makeText(getContext(), "Это первая композиция", Toast.LENGTH_SHORT).show();
+        }
+        runTimer();
     }
 }

@@ -1,14 +1,22 @@
 package com.example.audioapplication;
 
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
+import android.graphics.Color;
 import android.media.MediaPlayer;
 import android.os.Binder;
+import android.os.Build;
 import android.os.IBinder;
 import android.util.Log;
 import android.widget.Toast;
 
 import androidx.annotation.Nullable;
+import androidx.core.app.NotificationCompat;
 
 
 public class MusicService extends Service implements MediaPlayer.OnErrorListener {
@@ -16,9 +24,13 @@ public class MusicService extends Service implements MediaPlayer.OnErrorListener
     private final IBinder binder = new ServiceBinder();
 
     private final String LOG_TAG = "myLogs";
+    private final String CHANNEL_ID = "myChannel";
+    private final int NOTIFICATION_ID = 101;
     private MediaPlayer mediaPlayer;
-    private int length = 0;
+    private NotificationManager notificationManager;
     private int path;
+    private String title;
+    private int pausePosition = 0;
 
     public MusicService() {
     }
@@ -34,35 +46,18 @@ public class MusicService extends Service implements MediaPlayer.OnErrorListener
         super.onCreate();
         Log.d(LOG_TAG, "MusicService onCreate");
 
-        mediaPlayer = MediaPlayer.create(this, R.raw.andrewapplepie);
-        mediaPlayer.setOnErrorListener(this);
 
-        if (mediaPlayer != null) {
-            mediaPlayer.setLooping(true);
-            mediaPlayer.setVolume(50, 50);
-        }
-
-
-        mediaPlayer.setOnErrorListener(new MediaPlayer.OnErrorListener() {
-
-            public boolean onError(MediaPlayer mp, int what, int extra) {
-
-                onError(mediaPlayer, what, extra);
-                return true;
-            }
-        });
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d(LOG_TAG, "MusicService onStartCommand");
-        path = intent.getIntExtra(PlaybackFragment.KEY_POSITION, 0);
-        //mediaPlayer = MediaPlayer.create(this, path);
-        //mediaPlayer.setVolume(100, 100);
+        path = intent.getIntExtra(PlaybackFragment.KEY_PATH, 0);
+        title = intent.getStringExtra(PlaybackFragment.KEY_TITLE);
 
-        if (mediaPlayer != null) {
-            mediaPlayer.start();
-        }
+        startMusic();
+        showNotification();
+
         return START_NOT_STICKY;
     }
 
@@ -78,7 +73,7 @@ public class MusicService extends Service implements MediaPlayer.OnErrorListener
         if (mediaPlayer != null) {
             if (mediaPlayer.isPlaying()) {
                 mediaPlayer.pause();
-                length = mediaPlayer.getCurrentPosition();
+                pausePosition = mediaPlayer.getCurrentPosition();
             }
         }
     }
@@ -86,7 +81,7 @@ public class MusicService extends Service implements MediaPlayer.OnErrorListener
     public void resumeMusic() {
         if (mediaPlayer != null) {
             if (!mediaPlayer.isPlaying()) {
-                mediaPlayer.seekTo(length);
+                mediaPlayer.seekTo(pausePosition);
                 mediaPlayer.start();
             }
         }
@@ -94,13 +89,19 @@ public class MusicService extends Service implements MediaPlayer.OnErrorListener
 
     public void startMusic() {
         mediaPlayer = MediaPlayer.create(this, path);
+        mediaPlayer.setOnErrorListener(this);
+        mediaPlayer.setOnErrorListener(new MediaPlayer.OnErrorListener() {
+
+            public boolean onError(MediaPlayer mp, int what, int extra) {
+                onError(mediaPlayer, what, extra);
+                return true;
+            }
+        });
 
         if (mediaPlayer != null) {
-            mediaPlayer.setLooping(true);
             mediaPlayer.setVolume(50, 50);
             mediaPlayer.start();
         }
-
     }
 
     public void stopMusic() {
@@ -123,8 +124,8 @@ public class MusicService extends Service implements MediaPlayer.OnErrorListener
                 mediaPlayer = null;
             }
         }
+//        notificationManager.cancelAll();
     }
-
 
     @Override
     public boolean onError(MediaPlayer mp, int what, int extra) {
@@ -141,13 +142,52 @@ public class MusicService extends Service implements MediaPlayer.OnErrorListener
         return false;
     }
 
-
+    public int getMediaPlayerCurrentPosition() {
+        int currentPosition = 0;
+        if (mediaPlayer != null) {
+            currentPosition = mediaPlayer.getCurrentPosition();
+        }
+        return currentPosition;
+    }
 
     public int getMediaPlayerDuration() {
-        return mediaPlayer.getDuration();
+        int duration = 0;
+        if (mediaPlayer != null) {
+            duration = mediaPlayer.getDuration();
+        }
+        return duration;
     }
 
-    public int getMediaPlayerCurrentPosition() {
-        return length;
+    public void seekMediaPlayerTo(int progress) {
+        mediaPlayer.seekTo(progress);
     }
+
+    public void showNotification() {
+        notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "My channel", NotificationManager.IMPORTANCE_DEFAULT);
+            channel.setDescription("MyChannelDescription");
+            channel.enableVibration(false);
+            if (notificationManager != null) {
+                notificationManager.createNotificationChannel(channel);
+            }
+        }
+
+        Intent playbackIntent = new Intent(getApplicationContext(), PlaybackFragment.class);
+        PendingIntent playbackPendingIntent = PendingIntent.getActivity(this, 0, playbackIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_audiotrack_blue_24dp)
+                .setContentTitle("Audio player")
+                .setContentText(title)
+                .setContentIntent(playbackPendingIntent);
+
+        Notification notification = builder.build();
+
+        if (notificationManager != null) {
+            notificationManager.notify(NOTIFICATION_ID, notification);
+        }
+    }
+
 }
