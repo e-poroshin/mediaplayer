@@ -36,7 +36,7 @@ public class PlayListFragment extends Fragment {
 
 
     public interface OnSelectedTrackListener {
-        public void selectTrack(List<AudioFile> files, int currentPosition);
+        public void onSelectTrack(List<AudioFile> files, int currentPosition);
     }
 
     private OnSelectedTrackListener onSelectedTrackListener;
@@ -117,7 +117,7 @@ public class PlayListFragment extends Fragment {
                     @Override
                     public void onClick(View v) {
                         int position = getAdapterPosition();
-                        onSelectedTrackListener.selectTrack(files, position);
+                        onSelectedTrackListener.onSelectTrack(files, position);
                     }
                 });
             }

@@ -18,18 +18,22 @@ import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
+import java.io.Serializable;
+import java.util.List;
 
-public class MusicService extends Service implements MediaPlayer.OnErrorListener {
+public class MusicService extends Service {
 
     private final IBinder binder = new ServiceBinder();
 
+    private List<AudioFile> files;
+    private int position;
+    private int path;
+
     private final String LOG_TAG = "myLogs";
     private final String CHANNEL_ID = "myChannel";
-    private final int NOTIFICATION_ID = 101;
     private MediaPlayer mediaPlayer;
     private NotificationManager notificationManager;
-    private int path;
-    private String title;
+
     private int pausePosition = 0;
 
     public MusicService() {
@@ -45,18 +49,18 @@ public class MusicService extends Service implements MediaPlayer.OnErrorListener
     public void onCreate() {
         super.onCreate();
         Log.d(LOG_TAG, "MusicService onCreate");
-
-
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d(LOG_TAG, "MusicService onStartCommand");
-        path = intent.getIntExtra(PlaybackFragment.KEY_PATH, 0);
-        title = intent.getStringExtra(PlaybackFragment.KEY_TITLE);
+        files = (List<AudioFile>)intent.getSerializableExtra(MainActivity.KEY_FILE);
+        position = intent.getIntExtra(MainActivity.KEY_POSITION, 0);
 
-        startMusic();
-        showNotification();
+        runNotification(files.get(position).getTitle());
+
+        path = files.get(position).getPath();
+        startMusic(path);
 
         return START_NOT_STICKY;
     }
@@ -67,7 +71,6 @@ public class MusicService extends Service implements MediaPlayer.OnErrorListener
         Log.d(LOG_TAG, "MusicService onBind");
         return binder;
     }
-
 
     public void pauseMusic() {
         if (mediaPlayer != null) {
@@ -87,16 +90,8 @@ public class MusicService extends Service implements MediaPlayer.OnErrorListener
         }
     }
 
-    public void startMusic() {
+    public void startMusic(int path) {
         mediaPlayer = MediaPlayer.create(this, path);
-        mediaPlayer.setOnErrorListener(this);
-        mediaPlayer.setOnErrorListener(new MediaPlayer.OnErrorListener() {
-
-            public boolean onError(MediaPlayer mp, int what, int extra) {
-                onError(mediaPlayer, what, extra);
-                return true;
-            }
-        });
 
         if (mediaPlayer != null) {
             mediaPlayer.setVolume(50, 50);
@@ -112,6 +107,24 @@ public class MusicService extends Service implements MediaPlayer.OnErrorListener
         }
     }
 
+    public void playNextTrack() {
+        if (position < files.size() - 1) {
+            position++;
+            path = files.get(position).getPath();
+            startMusic(path);
+            runNotification(files.get(position).getTitle());
+        }
+    }
+
+    public void playPreviousTrack() {
+        if (position > 0) {
+            position--;
+            path = files.get(position).getPath();
+            startMusic(path);
+            runNotification(files.get(position).getTitle());
+        }
+    }
+
     @Override
     public void onDestroy() {
         Log.d(LOG_TAG, "MusicService onDestroy");
@@ -124,22 +137,6 @@ public class MusicService extends Service implements MediaPlayer.OnErrorListener
                 mediaPlayer = null;
             }
         }
-//        notificationManager.cancelAll();
-    }
-
-    @Override
-    public boolean onError(MediaPlayer mp, int what, int extra) {
-        Log.d(LOG_TAG, "MusicService onError");
-        Toast.makeText(this, "Music player failed", Toast.LENGTH_SHORT).show();
-        if (mediaPlayer != null) {
-            try {
-                mediaPlayer.stop();
-                mediaPlayer.release();
-            } finally {
-                mediaPlayer = null;
-            }
-        }
-        return false;
     }
 
     public int getMediaPlayerCurrentPosition() {
@@ -162,7 +159,7 @@ public class MusicService extends Service implements MediaPlayer.OnErrorListener
         mediaPlayer.seekTo(progress);
     }
 
-    public void showNotification() {
+    public void runNotification(String title) {
         notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -174,7 +171,10 @@ public class MusicService extends Service implements MediaPlayer.OnErrorListener
             }
         }
 
-        Intent playbackIntent = new Intent(getApplicationContext(), PlaybackFragment.class);
+        Intent playbackIntent = new Intent(getApplicationContext(), MainActivity.class);
+        playbackIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        playbackIntent.putExtra("KEY_FILES", (Serializable) files);
+        playbackIntent.putExtra("KEY_POSITION", position);
         PendingIntent playbackPendingIntent = PendingIntent.getActivity(this, 0, playbackIntent, PendingIntent.FLAG_UPDATE_CURRENT);
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
@@ -183,11 +183,17 @@ public class MusicService extends Service implements MediaPlayer.OnErrorListener
                 .setContentText(title)
                 .setContentIntent(playbackPendingIntent);
 
-        Notification notification = builder.build();
+        Notification notification = builder.build();;
+        startForeground(1, notification);
+    }
 
-        if (notificationManager != null) {
-            notificationManager.notify(NOTIFICATION_ID, notification);
+    public boolean isMediaplayerPlaing() {
+        if (mediaPlayer!= null) {
+            if (mediaPlayer.isPlaying()) {
+                return true;
+            }
         }
+        return false;
     }
 
 }
